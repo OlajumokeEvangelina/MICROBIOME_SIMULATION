@@ -1,0 +1,35 @@
+
+    ########### MODEL FORMULATION
+    model{
+    for(i in 1:N) {
+    xx[i] ~ dnorm(muu[i],tau.ee)
+    muu[i] <-  beta[1] + (betaT[1]*ind[1])*treatment[i]
+    yy[i] ~ dnorm(mu[i],tau.e)
+    mu[i] <-  beta[2] + (betaT[2] * ind[2])*treatment[i] +
+    (betaT[3]*ind[3]) * xx[i]
+    }
+    
+    ########### PRIORS
+    tau.e ~ dgamma(0.00001,0.00001)
+    sigma.e <- 1 / sqrt(tau.e)
+    
+    tau.ee ~ dgamma(0.00001,0.00001)
+    sigma.ee <- 1 / sqrt(tau.ee)
+    
+    ## Indicator beta3, beta4,beta5
+    for(k in c(1,2,3)) {
+    ind[k] ~ dunif(0,1)
+    betaT[k] ~ dnorm(0,taub[k])
+    taub[k] ~ dgamma(1,0.001)
+    }
+    
+    beta3 <- ind[1] * betaT[1]
+    beta4 <- ind[2] * betaT[2]
+    beta5 <- ind[3] * betaT[3]
+    
+    for (j in c(1,2)){
+    beta[j] ~ dnorm(0,0.000001)
+    }
+    
+    }
+    

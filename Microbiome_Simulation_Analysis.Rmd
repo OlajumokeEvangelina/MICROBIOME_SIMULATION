@@ -1,0 +1,321 @@
+---
+title: "Microbiome Simulation Analysis"
+output: pdf_document
+author: "Olajumoke Evangelina Owokotomo"
+date: "6/13/2019"
+header-includes:
+- \newcommand{\bcenter}{\begin{center}}
+- \newcommand{\ecenter}{\end{center}}
+---
+
+
+```{r setup, include=FALSE}
+
+library("Biobase")
+library("grid")
+library("ggplot2")
+library("nlme")
+library(stringr)
+library(dplyr)
+library(phyloseq)
+library(tidyr)
+library(ggpubr)
+library(gridExtra)
+library(IntegratedJM)
+library(mvtnorm)
+library(xtable)
+
+# For the BVS part
+
+library(rjags) 
+library(R2jags)
+library(runjags)
+library(purrr)
+library(parallel)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## General information 
+
+* This is a simulation study to study the relatonship between the probability of inclusion from the  BVS approach, the $R^2_h$  from the information theory approach and the adjusted association from the joint moelling approach.
+
+## Simulation procedure (One dataset analysis)
+For simulating the dataset the following steps and values were used;
+
+* The joint error term for $X$ and $Y$  was assumed to have mean = (0,0) and covariance matrix = $\varepsilon$
+$\begin{bmatrix}
+\sigma^2_x & \sigma^2_{xy}  \\
+\sigma^2_{xy} & \sigma^2_y \\
+\end{bmatrix}$
+
+* The $\sigma^2_x = \sigma^2_y = 1$.
+
+* $\rho_{xy} = \sigma^2_{xy}$ because $\sigma^2_x = \sigma^2_y = 1$.
+
+* $\rho_{xy} = c(0.25, 0.50, 0.75, 0.90)$.
+
+* $\varepsilon_1 = \begin{bmatrix}
+1 & 0.25  \\
+0.25 & 1 \\
+\end{bmatrix}$,  $\varepsilon_2 = \begin{bmatrix}
+1 & 0.5  \\
+0.5 & 1 \\
+\end{bmatrix}$,   $\varepsilon_3 = \begin{bmatrix}
+1 & 0.75  \\
+0.75 & 1 \\
+\end{bmatrix}$,   $\varepsilon_4 = \begin{bmatrix}
+1 & 0.90  \\
+0.90 & 1 \\
+\end{bmatrix}$.
+
+* The number of subjects in each treatment group is 50, therfore $Z_i = 100$.
+
+* $$X_i = \alpha_0 + \alpha_1 Z_i + \epsilon_i^x$$
+   $$Y_i = \beta_0 + \beta_1 Z_i + \epsilon_i^y$$.
+   
+* $\epsilon_i^x$ and $\epsilon_i^y$  were obtained  using rmvnorm(100, c(0,0), $\varepsilon$) for each correlation.
+
+* Using the following true value:  $\alpha_0 =1, \ \ \ \alpha_1 = 5, \ \ \ \beta_0 = 5, \ \ \ \beta_1 = 2$.
+
+* The combination of the true parameter values and $\epsilon_i^x$ and $\epsilon_i^y$ was then used to simulate
+1000 dataset for each correllation; we therefore have 1000 dataset for each cor=0.25, for cor=0.5, for cor=0.75 and for cor=0.90.
+
+```{r first, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+###############################################################
+# Simulation                                                  #
+# n: sample size at each group                                #
+# Z: treatment (0/1)                                          #
+# mu & Sigma: mean and covariance matrix for the error        #
+###############################################################
+
+##############  SIMULATING DATA #####################
+corr <- c(0.9,0.75,0.5,0.25)
+
+mu<-c(0,0)
+varx=1
+vary=1
+
+Sigma = list()
+for (j in 1:4) {
+  Sigma[[j]]<-matrix(c(varx,corr[j],corr[j],vary),2,2)
+}
+
+
+alpha0<-1
+alpha1<-5
+beta0<-5
+beta1<-2
+
+n<-50
+zi<-as.numeric(c(rep(0,n),rep(1,n)))
+B<-1000
+r.square.h<-c(1:B)
+
+
+x = array(data = NA, dim=c(100,1000,4)) ; y = array(data = NA, dim=c(100,1000,4))
+
+eps = list(); se=list(); ce=list()
+
+set.seed(1234)
+for(i in 1:B){
+  for (k in 1:4) {
+eps[[k]] <- rmvnorm(n,mu,Sigma[[k]])
+x[,i,k]<-alpha0+alpha1*zi+eps[[k]][,1]
+y[,i,k]<-beta0+beta1*zi+eps[[k]][,2]
+
+corr <- c(0.9,0.75,0.5,0.25)
+
+se[[k]] <- data.frame(x[,,k][,])
+ce[[k]] <- data.frame(y[,,k][,])
+  }
+}
+
+
+###########################  information theory ###########################
+log1<-c(1:B)
+log2<-c(1:B)
+anov<-list()
+G2<-c(1:B)
+R2h<-c(1:B)
+
+R2h <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+intercept1 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+intercept2 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+teffect1 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+teffect2 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+effectofx <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+pvalue <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+
+list1 <- list()
+
+## fitting linear model (the clinical endpoint and the classifying variable)
+set.seed(1234)
+for(i in 1:B)
+{
+  for(q in 1:4){
+  fit.1<-lm(ce[[q]][,i]~zi)
+  log1[i] <- as.numeric(logLik(fit.1))
+  int1 <- summary(fit.1)$coefficients[1,1]
+  trteffect1 <- summary(fit.1)$coefficients[2,1]
+
+## fitting linear model (the clinical endpoint and the classifying variable and the biomarker)
+  fit.2 <-lm(ce[[q]][,i]~zi+se[[q]][,i])
+  log2[i] <- as.numeric(logLik(fit.2))
+  int2 <- summary(fit.2)$coefficients[1,1]
+  trteffect2 <- summary(fit.2)$coefficients[2,1]
+  xeffect <- summary(fit.2)$coefficients[3,1]
+  
+  LRT <- anova(fit.1,fit.2)
+
+   G2[i] <- -2*(log1[i] - log2[i])
+   R2h[i,q] <- 1- exp(-G2[i]/length(zi))
+   intercept1[i,q] <- int1
+   intercept2[i,q] <- int2
+   teffect1[i,q] <- trteffect1
+   teffect2[i,q] <- trteffect2
+   effectofx[i,q] <- xeffect
+   pvalue[i,q] <- as.numeric(LRT$`Pr(>F)`[2])   
+  }
+}
+
+
+  list1[[1]] <- R2h
+  list1[[2]] <- intercept1
+  list1[[3]] <- intercept2
+  list1[[4]] <- teffect1
+  list1[[5]] <- teffect2
+  list1[[6]] <- effectofx
+  list1[[7]] <- pvalue
+
+
+################   The Rsquared adjusted   ####################
+AdjustedR2 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+varend <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+varsurr <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+varcov <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+list2 <- list()
+
+for(i in 1:B) {
+  for(q in 1:4) {
+    dat <- data.frame(Resp=c(ce[[q]][,i],se[[q]][,i])
+                      , ind = rep(c(1,2),each=100), z = c(zi,zi),
+                      Subject = rep(1:100, times = 2))
+    
+    m1 <- gls(Resp ~ factor(ind)*z, data = dat,
+              correlation = corSymm(form = ~ ind | Subject),
+              weights = varIdent(form = ~ 1 | ind), method = "ML")
+    
+    mvcov <- getVarCov(m1)
+    AdjustedR2[i,q] <- mvcov[1,2] / sqrt(mvcov[1,1] * mvcov[2,2])
+    intercept1[i,q] <- unname(coef(m1)[1])
+    intercept2[i,q] <- unname(coef(m1)[1]) + unname(coef(m1)[2])
+    teffect1[i,q] <- unname(coef(m1)[3])
+    teffect2[i,q] <- unname(coef(m1)[3]) + unname(coef(m1)[4])
+    varend[i,q] <- mvcov[1,1]
+    varsurr[i,q] <- mvcov[2,2]
+    varcov[i,q] <- mvcov[1,2]
+  }
+}
+
+list2[[1]] <- AdjustedR2
+list2[[2]] <- intercept1
+list2[[3]] <- intercept2
+list2[[4]] <- teffect1
+list2[[5]] <- teffect2 
+list2[[6]] <- varend
+list2[[7]] <- varsurr
+list2[[8]] <- varcov
+  
+  
+```
+
+
+```{r bvs, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+
+ncl <- makeCluster(detectCores() - 1)
+  
+set.seed(1234)
+
+init1 = list(
+  list(betaT = rep(5.62, 3), ind = rep(0.9, 3), tau.e = 0.45,
+       tau.ee = 0.25),
+  list( betaT = rep(2.22, 3), ind = rep(1, 3), tau.e = 0.45/2,
+        tau.ee = 0.25/2)
+)
+
+cat("
+    ########### MODEL FORMULATION
+    model{
+    for(i in 1:N) {
+    xx[i] ~ dnorm(muu[i],tau.ee)
+    muu[i] <-  beta[1] + (betaT[1]*ind[1])*treatment[i]
+    yy[i] ~ dnorm(mu[i],tau.e)
+    mu[i] <-  beta[2] + (betaT[2] * ind[2])*treatment[i] +
+    (betaT[3]*ind[3]) * xx[i]
+    }
+    
+    ########### PRIORS
+    tau.e ~ dgamma(0.00001,0.00001)
+    sigma.e <- 1 / sqrt(tau.e)
+    
+    tau.ee ~ dgamma(0.00001,0.00001)
+    sigma.ee <- 1 / sqrt(tau.ee)
+    
+    ## Indicator beta3, beta4,beta5
+    for(k in c(1,2,3)) {
+    ind[k] ~ dunif(0,1)
+    betaT[k] ~ dnorm(0,taub[k])
+    taub[k] ~ dgamma(1,0.001)
+    }
+    
+    beta3 <- ind[1] * betaT[1]
+    beta4 <- ind[2] * betaT[2]
+    beta5 <- ind[3] * betaT[3]
+    
+    for (j in c(1,2)){
+    beta[j] ~ dnorm(0,0.000001)
+    }
+    
+    }
+    ",file ="Model1.jag")
+
+Final_results <- vector("list", 4)
+for(j in 1:4) {
+  print(j)
+  clusterEvalQ(ncl, library(runjags))
+  clusterEvalQ(ncl, library(R2jags))
+  jmodel <- read.jagsfile("Model1.jag")
+  
+  #clusterEvalQ(ncl, init1)
+  clusterExport(ncl, c("zi", "init1", "jmodel", "j", "ce", "se"))
+  
+  results1 <- clusterApply(cl = ncl, x = 1:1000, 
+                       fun = function(i) {
+    x <- se[[j]][, i]
+    y <- ce[[j]][, i]
+    data1 = list(
+      N = length(zi),
+      treatment = zi,
+      yy =  y,
+      xx = x
+    )
+    model1 <- run.jags(model=jmodel,monitor=c("beta","beta3","beta4","beta5","ind","betaT"),data=data1,inits=init1, method="rjags",
+                       n.chains=2,burnin=50000,sample=80000,adapt=70000)
+
+    return(data.frame(Int_x = model1$summaries["beta[1]", "Mean"],
+                      Int_y = model1$summaries["beta[2]", "Mean"],
+                      Trt_x = model1$summaries["beta3", "Mean"],
+                      Trt_y = model1$summaries["beta4", "Mean"],
+                      Eff_xy = model1$summaries["beta5", "Mean"],
+                      Ind = model1$summaries["ind[3]", "Mean"])
+    )
+  }) %>% do.call(rbind.data.frame, .)
+  Final_results[[j]] <- results1 
+}
+stopCluster(ncl)
+
+
+```
