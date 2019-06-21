@@ -33,6 +33,8 @@ library(runjags)
 library(purrr)
 library(parallel)
 
+load("Results.RData")
+
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -82,6 +84,23 @@ $\begin{bmatrix}
 
 * The combination of the true parameter values and $\epsilon_i^x$ and $\epsilon_i^y$ was then used to simulate
 1000 dataset for each correllation; we therefore have 1000 dataset for each cor=0.25, for cor=0.5, for cor=0.75 and for cor=0.90.
+
+* Models for the Joint model approach
+$$ X_i = \mu_i^x  + \alpha Z_i + \epsilon_i^x$$
+$$ Y_i = \mu_i^y  + \beta Z_i + \epsilon_i^y$$
+$$R^2 = corr(\epsilon_i^x,\epsilon_i^y)$$
+
+* Models for the Information theory approach
+$$ Y_i^1 = \mu_i^{y_1}  + \alpha Z_i + \epsilon_i^{y_1} ------- \text{Model1}$$
+$$ Y_i^2 = \mu_i^{y_2}  + \beta Z_i + \gamma X_i +\epsilon_i^{y_2} ------- \text{Model2}$$
+$$ G^2 = -2(\text{log1} - \text{log2})$$
+$$ R^2_h = 1- e^\frac{-G^2}{n} $$ 
+
+* Models for the BVS approach
+$$ X_i = \mu_i^{x}  + \theta_1 \phi_1 Z_i + \epsilon_i^{x} \ \ \ \ \ \ \ \ \ \text{where} \ \ \ \ \alpha = \theta_1 \phi_1$$
+$$ Y_i = \mu_i^{y}  + \theta_2 \phi_2 Z_i + \theta_3 \phi_3 X_i +\epsilon_i^{y}  \ \ \ \ \ \ \ \ \ \text{where} \ \ \ \ \beta = \theta_2 \phi_2 \ \ \ \ \text{and} \ \ \ \ \gamma = \theta_3 \phi_3 $$
+$$R^2_{BVS} = P(\phi_3 =1) $$
+
 
 ```{r first, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
 ###############################################################
@@ -190,13 +209,29 @@ for(i in 1:B)
   list1[[6]] <- effectofx
   list1[[7]] <- pvalue
 
+  names(list1) = c("R2h", "intercept1", "intercept2","teffect1", "teffect2", "effectofx", "pvalue")
+  colnames(list1$R2h) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$intercept1) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$intercept2) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$teffect1) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$teffect2) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$effectofx) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list1$pvalue) = c("0.9", "0.75", "0.5", "0.25")
+  
+  
+  
 
 ################   The Rsquared adjusted   ####################
 AdjustedR2 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
 varend <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
 varsurr <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
 varcov <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
-list2 <- list()
+intercept1 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+intercept2 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+teffect1 <- as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+teffect2 <-  as.data.frame(matrix(data = NA, nrow = 1000, ncol=4))
+
+  list2 <- list()
 
 for(i in 1:B) {
   for(q in 1:4) {
@@ -228,94 +263,63 @@ list2[[5]] <- teffect2
 list2[[6]] <- varend
 list2[[7]] <- varsurr
 list2[[8]] <- varcov
-  
+
+
+names(list2) = c("R2Adj", "intercept1", "intercept2","teffect1", "teffect2", "varend", "varsurr", "varcov")
+  colnames(list2$R2Adj) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$intercept1) = c("0.9", "0.75", "0.5", "0.25")
+  colnames(list2$intercept2) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$teffect1) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$teffect2) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$varend) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$varsurr) = c("0.9", "0.75", "0.5", "0.25")  
+  colnames(list2$varcov) = c("0.9", "0.75", "0.5", "0.25") 
   
 ```
 
 
 ```{r bvs, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
-
-ncl <- makeCluster(detectCores() - 1)
+names(Final_results) <- c(0.9,0.75,0.5,0.25)
   
-set.seed(1234)
+  correlatn <- data.frame(ind = c(Final_results$`0.9`$Ind, Final_results$`0.75`$Ind, Final_results$`0.5`$Ind,Final_results$`0.25`$Ind),
+                        R2adj = c(list2$R2Adj$`0.9`,list2$R2Adj$`0.75`,list2$R2Adj$`0.5`,list2$R2Adj$`0.25`),
+                        R2h = c(list1$R2h$`0.9`,list1$R2h$`0.75`,list1$R2h$`0.5`,list1$R2h$`0.25`),
+                        Corr = as.factor(rep(c(0.9,0.75,0.5,0.25),each=1000)))
 
-init1 = list(
-  list(betaT = rep(5.62, 3), ind = rep(0.9, 3), tau.e = 0.45,
-       tau.ee = 0.25),
-  list( betaT = rep(2.22, 3), ind = rep(1, 3), tau.e = 0.45/2,
-        tau.ee = 0.25/2)
-)
+no0.25 <- correlatn[1:3000,]
 
-cat("
-    ########### MODEL FORMULATION
-    model{
-    for(i in 1:N) {
-    xx[i] ~ dnorm(muu[i],tau.ee)
-    muu[i] <-  beta[1] + (betaT[1]*ind[1])*treatment[i]
-    yy[i] ~ dnorm(mu[i],tau.e)
-    mu[i] <-  beta[2] + (betaT[2] * ind[2])*treatment[i] +
-    (betaT[3]*ind[3]) * xx[i]
-    }
-    
-    ########### PRIORS
-    tau.e ~ dgamma(0.00001,0.00001)
-    sigma.e <- 1 / sqrt(tau.e)
-    
-    tau.ee ~ dgamma(0.00001,0.00001)
-    sigma.ee <- 1 / sqrt(tau.ee)
-    
-    ## Indicator beta3, beta4,beta5
-    for(k in c(1,2,3)) {
-    ind[k] ~ dunif(0,1)
-    betaT[k] ~ dnorm(0,taub[k])
-    taub[k] ~ dgamma(1,0.001)
-    }
-    
-    beta3 <- ind[1] * betaT[1]
-    beta4 <- ind[2] * betaT[2]
-    beta5 <- ind[3] * betaT[3]
-    
-    for (j in c(1,2)){
-    beta[j] ~ dnorm(0,0.000001)
-    }
-    
-    }
-    ",file ="Model1.jag")
 
-Final_results <- vector("list", 4)
-for(j in 1:4) {
-  print(j)
-  clusterEvalQ(ncl, library(runjags))
-  clusterEvalQ(ncl, library(R2jags))
-  jmodel <- read.jagsfile("Model1.jag")
-  
-  #clusterEvalQ(ncl, init1)
-  clusterExport(ncl, c("zi", "init1", "jmodel", "j", "ce", "se"))
-  
-  results1 <- clusterApply(cl = ncl, x = 1:1000, 
-                       fun = function(i) {
-    x <- se[[j]][, i]
-    y <- ce[[j]][, i]
-    data1 = list(
-      N = length(zi),
-      treatment = zi,
-      yy =  y,
-      xx = x
-    )
-    model1 <- run.jags(model=jmodel,monitor=c("beta","beta3","beta4","beta5","ind","betaT"),data=data1,inits=init1, method="rjags",
-                       n.chains=2,burnin=50000,sample=80000,adapt=70000)
+```
 
-    return(data.frame(Int_x = model1$summaries["beta[1]", "Mean"],
-                      Int_y = model1$summaries["beta[2]", "Mean"],
-                      Trt_x = model1$summaries["beta3", "Mean"],
-                      Trt_y = model1$summaries["beta4", "Mean"],
-                      Eff_xy = model1$summaries["beta5", "Mean"],
-                      Ind = model1$summaries["ind[3]", "Mean"])
-    )
-  }) %>% do.call(rbind.data.frame, .)
-  Final_results[[j]] <- results1 
+
+## ADJUSTED ASSOCIATION AND INFOMATION APPROACH
+```{r g1, echo=FALSE, warning=FALSE, warning=FALSE,  fig.align = "center"}
+ggplot(no0.25, aes(x=R2adj, y=R2h, color=Corr)) + geom_point() + xlab("Adjusted association") + ylab("Rsquare h")
+```
+
+##  PROBABILITY OF INCLUSION AND ADJUSTED ASSOCIATION
+```{r g2, echo=FALSE, warning=FALSE, warning=FALSE,  fig.align = "center"}
+ggplot(no0.25, aes(x=ind, y=R2adj, color=Corr)) + geom_point() + xlab("Prob of inclusion") + ylab("Adjusted association")
+```
+
+## PROBABILITY OF INCLUSION AND INFOMATION APPROACH
+```{r g3, echo=FALSE, warning=FALSE, warning=FALSE,  fig.align = "center"}
+ggplot(no0.25, aes(x=ind, y=R2h, color=Corr)) + geom_point() + xlab("Prob of inclusion") + ylab("Rsquare h")
+```
+
+```{r tt, warning=FALSE, message=FALSE, cache=TRUE, echo=FALSE}
+newcorr <- c(0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1)
+
+trteffects <- NULL
+surrogateeffect <- NULL
+variancee <- NULL
+
+for (i in 1:20) {
+  trteffects[i] <- 2 - (newcorr[i] *5)
+  surrogateeffect[i] <- newcorr[i]
+  variancee[i] <- 1 - (newcorr[i] * newcorr[i])
 }
-stopCluster(ncl)
 
+dd <- data.frame(newcorr, trteffects, surrogateeffect, variancee)
 
 ```
